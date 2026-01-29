@@ -8,10 +8,10 @@ from typing import Iterator
 
 import numpy as np
 
-# Add rlds submodule to path
-_rlds_path = Path(__file__).parent.parent.parent.parent / "rlds"
-if str(_rlds_path) not in sys.path:
-    sys.path.insert(0, str(_rlds_path))
+# Add project root to path so 'import rlds' finds the vendored rlds/ directory
+_project_root = Path(__file__).parent.parent.parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
 
 from rlds.rlds_types import build_step, build_episode, Episode as RLDSEpisode, Step as RLDSStep
 from rlds.tfds import episode_writer
