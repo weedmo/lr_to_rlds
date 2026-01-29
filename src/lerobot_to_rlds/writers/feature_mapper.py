@@ -136,13 +136,8 @@ class FeatureMapper:
                 )
                 added_cameras.add(oxe_name)
 
-        # Ensure at least one image feature exists
-        if not added_cameras:
-            features["image"] = tfds.features.Image(
-                shape=self.config.image_shape,
-                dtype=np.uint8,
-                encoding_format="png",
-            )
+        # Note: We no longer add a default "image" feature if no cameras exist.
+        # State-only datasets are valid RLDS datasets.
 
         return tfds.features.FeaturesDict(features)
 

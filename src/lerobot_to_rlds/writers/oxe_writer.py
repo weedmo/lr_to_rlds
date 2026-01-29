@@ -166,9 +166,7 @@ class OXERLDSWriter:
 
         return build_episode(
             steps=steps,
-            metadata={
-                "file_path": str(episode.info.data_path),
-            },
+            metadata={},  # Episode-level metadata not supported without config
         )
 
     def _convert_step(self, step: Step) -> RLDSStep:
