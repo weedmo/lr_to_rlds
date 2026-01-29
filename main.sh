@@ -4,10 +4,10 @@
 # Usage: ./main.sh
 #
 # Provides an interactive menu for:
-# - Listing datasets in data/
-# - Discovering dataset structure
-# - Visualizing datasets (episodes, plots, frames)
-# - Converting datasets to RLDS format
+# - Listing RLDS datasets in data/
+# - Discovering LeRobot dataset structure
+# - Visualizing RLDS datasets (episodes, plots, frames)
+# - Converting LeRobot datasets to RLDS format
 
 set -e
 
@@ -46,10 +46,10 @@ print_header() {
 print_main_menu() {
     echo -e "${GREEN}Main Menu:${NC}"
     echo ""
-    echo "  1) List datasets in data/"
-    echo "  2) Discover dataset structure"
-    echo "  3) Visualize dataset"
-    echo "  4) Convert dataset"
+    echo "  1) List RLDS datasets in data/"
+    echo "  2) Discover LeRobot dataset (source)"
+    echo "  3) Visualize RLDS dataset"
+    echo "  4) Convert LeRobot to RLDS"
     echo ""
     echo "  h) Help"
     echo "  q) Quit"
@@ -58,7 +58,7 @@ print_main_menu() {
 
 # Print visualize menu
 print_visualize_menu() {
-    echo -e "${GREEN}Visualize Menu:${NC}"
+    echo -e "${GREEN}Visualize RLDS Dataset:${NC}"
     echo ""
     echo "  1) List episodes"
     echo "  2) Show dataset info"
@@ -71,18 +71,18 @@ print_visualize_menu() {
     echo ""
 }
 
-# Get dataset path from user
-get_dataset_path() {
-    local prompt="${1:-Enter dataset path}"
-    local default_hint=""
+# Get RLDS dataset path from data/
+get_rlds_dataset_path() {
+    local prompt="${1:-Enter RLDS dataset path}"
 
     # Check if data/ exists and has subdirectories
     if [ -d "$DATA_DIR" ]; then
-        local datasets=($(ls -d "$DATA_DIR"/*/ 2>/dev/null | head -5))
+        local datasets=($(find "$DATA_DIR" -maxdepth 2 -name "dataset_info.json" -exec dirname {} \; 2>/dev/null | head -10))
         if [ ${#datasets[@]} -gt 0 ]; then
-            echo -e "${BLUE}Available in data/:${NC}"
+            echo -e "${BLUE}Available RLDS datasets:${NC}"
             for d in "${datasets[@]}"; do
-                echo "  - $(basename "$d")"
+                local rel_path="${d#$DATA_DIR/}"
+                echo "  - $rel_path"
             done
             echo ""
         fi
@@ -98,13 +98,20 @@ get_dataset_path() {
     echo "$path"
 }
 
+# Get LeRobot source dataset path
+get_lerobot_dataset_path() {
+    local prompt="${1:-Enter LeRobot dataset path}"
+    read -p "$prompt: " path
+    echo "$path"
+}
+
 # List datasets
 do_list_datasets() {
     echo ""
-    echo -e "${BLUE}Listing datasets...${NC}"
+    echo -e "${BLUE}Listing RLDS datasets...${NC}"
     echo ""
     lerobot-to-rlds list-datasets --data-dir "$DATA_DIR" 2>/dev/null || {
-        echo -e "${YELLOW}No datasets found or data/ directory doesn't exist.${NC}"
+        echo -e "${YELLOW}No RLDS datasets found or data/ directory doesn't exist.${NC}"
     }
     echo ""
     read -p "Press Enter to continue..."
@@ -113,16 +120,16 @@ do_list_datasets() {
 # Discover dataset
 do_discover() {
     echo ""
-    local path=$(get_dataset_path "Enter LeRobot dataset path")
+    local path=$(get_lerobot_dataset_path "Enter LeRobot source dataset path")
 
-    if [ -z "$path" ]; then
-        echo -e "${RED}No path provided.${NC}"
+    if [ -z "$path" ] || [ ! -d "$path" ]; then
+        echo -e "${RED}Invalid path.${NC}"
         read -p "Press Enter to continue..."
         return
     fi
 
     echo ""
-    echo -e "${BLUE}Discovering dataset: ${path}${NC}"
+    echo -e "${BLUE}Discovering LeRobot dataset: ${path}${NC}"
     echo ""
     lerobot-to-rlds discover "$path"
     echo ""
@@ -140,7 +147,7 @@ do_visualize() {
         case $choice in
             1)
                 echo ""
-                local path=$(get_dataset_path "Enter LeRobot dataset path")
+                local path=$(get_rlds_dataset_path "Enter RLDS dataset path")
                 if [ -n "$path" ] && [ -d "$path" ]; then
                     echo ""
                     lerobot-to-rlds visualize list "$path"
@@ -150,7 +157,7 @@ do_visualize() {
                 ;;
             2)
                 echo ""
-                local path=$(get_dataset_path "Enter LeRobot dataset path")
+                local path=$(get_rlds_dataset_path "Enter RLDS dataset path")
                 if [ -n "$path" ] && [ -d "$path" ]; then
                     echo ""
                     lerobot-to-rlds visualize info "$path"
@@ -160,7 +167,7 @@ do_visualize() {
                 ;;
             3)
                 echo ""
-                local path=$(get_dataset_path "Enter LeRobot dataset path")
+                local path=$(get_rlds_dataset_path "Enter RLDS dataset path")
                 if [ -n "$path" ] && [ -d "$path" ]; then
                     read -p "Episode index [0]: " episode
                     episode=${episode:-0}
@@ -180,27 +187,20 @@ do_visualize() {
                 ;;
             4)
                 echo ""
-                local path=$(get_dataset_path "Enter LeRobot dataset path")
+                local path=$(get_rlds_dataset_path "Enter RLDS dataset path")
                 if [ -n "$path" ] && [ -d "$path" ]; then
                     read -p "Episode index [0]: " episode
                     episode=${episode:-0}
                     read -p "Step index (or comma-separated for grid) [0]: " steps
                     steps=${steps:-0}
-                    read -p "Camera (leave empty for default): " camera
+                    read -p "Camera (image/wrist_image) [image]: " camera
+                    camera=${camera:-image}
 
                     echo ""
                     if [[ "$steps" == *","* ]]; then
-                        if [ -n "$camera" ]; then
-                            lerobot-to-rlds visualize frames "$path" -e "$episode" --steps "$steps" -c "$camera"
-                        else
-                            lerobot-to-rlds visualize frames "$path" -e "$episode" --steps "$steps"
-                        fi
+                        lerobot-to-rlds visualize frames "$path" -e "$episode" --steps "$steps" -c "$camera"
                     else
-                        if [ -n "$camera" ]; then
-                            lerobot-to-rlds visualize frames "$path" -e "$episode" -s "$steps" -c "$camera"
-                        else
-                            lerobot-to-rlds visualize frames "$path" -e "$episode" -s "$steps"
-                        fi
+                        lerobot-to-rlds visualize frames "$path" -e "$episode" -s "$steps" -c "$camera"
                     fi
                 fi
                 echo ""
@@ -208,7 +208,7 @@ do_visualize() {
                 ;;
             5)
                 echo ""
-                local path=$(get_dataset_path "Enter LeRobot dataset path")
+                local path=$(get_rlds_dataset_path "Enter RLDS dataset path")
                 if [ -n "$path" ] && [ -d "$path" ]; then
                     read -p "Episode index [0]: " episode
                     episode=${episode:-0}
@@ -220,19 +220,19 @@ do_visualize() {
                 ;;
             6)
                 echo ""
-                local path=$(get_dataset_path "Enter LeRobot dataset path")
+                local path=$(get_rlds_dataset_path "Enter RLDS dataset path")
                 if [ -n "$path" ] && [ -d "$path" ]; then
                     read -p "Episode index [0]: " episode
                     episode=${episode:-0}
                     read -p "Output directory: " output_dir
-                    read -p "Camera (leave empty for default): " camera
+                    read -p "Camera (image/wrist_image) [image]: " camera
+                    camera=${camera:-image}
                     read -p "Start step (leave empty for all): " start
                     read -p "End step (leave empty for all): " end
 
                     if [ -n "$output_dir" ]; then
                         echo ""
-                        cmd="lerobot-to-rlds visualize export-frames \"$path\" \"$output_dir\" -e $episode"
-                        [ -n "$camera" ] && cmd="$cmd -c \"$camera\""
+                        cmd="lerobot-to-rlds visualize export-frames \"$path\" \"$output_dir\" -e $episode -c \"$camera\""
                         [ -n "$start" ] && cmd="$cmd --start $start"
                         [ -n "$end" ] && cmd="$cmd --end $end"
                         eval $cmd
@@ -257,7 +257,7 @@ do_visualize() {
 # Convert dataset
 do_convert() {
     echo ""
-    local path=$(get_dataset_path "Enter LeRobot dataset path to convert")
+    local path=$(get_lerobot_dataset_path "Enter LeRobot source dataset path to convert")
 
     if [ -z "$path" ] || [ ! -d "$path" ]; then
         echo -e "${RED}Invalid path.${NC}"
@@ -294,11 +294,17 @@ do_help() {
     echo "This tool converts LeRobot datasets (v2.1/v3.0) to RLDS format"
     echo "for use with OpenVLA, OXE, and other RL frameworks."
     echo ""
+    echo -e "${BLUE}Workflow:${NC}"
+    echo "  1. Discover: Analyze a LeRobot source dataset"
+    echo "  2. Convert:  Convert LeRobot -> RLDS (saves to data/)"
+    echo "  3. Visualize: View the converted RLDS dataset"
+    echo ""
     echo -e "${BLUE}Quick Commands:${NC}"
-    echo "  lerobot-to-rlds discover <path>     # Analyze dataset structure"
-    echo "  lerobot-to-rlds convert <path>      # Convert to RLDS (outputs to data/)"
-    echo "  lerobot-to-rlds visualize list <path>  # List episodes"
-    echo "  lerobot-to-rlds visualize plot <path>  # Plot state/action"
+    echo "  lerobot-to-rlds discover <lerobot_path>   # Analyze source"
+    echo "  lerobot-to-rlds convert <lerobot_path>    # Convert to RLDS"
+    echo "  lerobot-to-rlds visualize list <rlds_path>   # List episodes"
+    echo "  lerobot-to-rlds visualize plot <rlds_path>   # Plot state/action"
+    echo "  lerobot-to-rlds visualize frames <rlds_path> # View images"
     echo ""
     echo -e "${BLUE}Default Output:${NC}"
     echo "  Converted datasets are saved to data/<folder_name>/"

@@ -1,4 +1,4 @@
-"""Visualization module for LeRobot datasets."""
+"""Visualization module for RLDS datasets."""
 
 from lerobot_to_rlds.visualization.visualizer import DatasetVisualizer, EpisodeSummary
 from lerobot_to_rlds.visualization.plotter import EpisodePlotter

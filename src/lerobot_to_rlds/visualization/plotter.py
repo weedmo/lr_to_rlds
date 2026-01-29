@@ -1,76 +1,59 @@
-"""Episode plotter for state and action visualization."""
+"""Episode plotter for state and action visualization in RLDS datasets."""
 
 from pathlib import Path
 from typing import Literal
 
 import numpy as np
 
-from lerobot_to_rlds.readers.base import Episode, LeRobotReader
+from lerobot_to_rlds.visualization.visualizer import DatasetVisualizer
 
 
 class EpisodePlotter:
-    """Matplotlib-based plotter for episode state and action data."""
+    """Matplotlib-based plotter for RLDS episode state and action data."""
 
-    def __init__(self, reader: LeRobotReader) -> None:
+    def __init__(self, visualizer: DatasetVisualizer) -> None:
         """Initialize the plotter.
 
         Args:
-            reader: LeRobotReader instance for the dataset.
+            visualizer: DatasetVisualizer instance for the dataset.
         """
-        self.reader = reader
+        self.visualizer = visualizer
 
-    def _get_episode(self, episode_index: int) -> Episode:
-        """Get episode by index.
+    def _get_episode_data(self, episode_index: int) -> tuple[np.ndarray, np.ndarray]:
+        """Extract states and actions from an episode.
 
         Args:
             episode_index: The episode index.
 
         Returns:
-            Episode object.
+            Tuple of (states, actions) arrays.
         """
-        episodes = self.reader.list_episodes()
-        for ep_info in episodes:
-            if ep_info.episode_index == episode_index:
-                return self.reader.read_episode(ep_info)
-        raise IndexError(f"Episode index {episode_index} not found")
+        episode = self.visualizer.get_episode(episode_index)
+        steps = list(episode["steps"])
 
-    def _extract_states(self, episode: Episode) -> np.ndarray:
-        """Extract state vectors from episode steps.
-
-        Args:
-            episode: Episode to extract states from.
-
-        Returns:
-            Array of shape (num_steps, state_dim).
-        """
         states = []
-        for step in episode.steps:
-            # Try common state keys
-            state = None
-            for key in ["state", "observation.state", "proprio"]:
-                if key in step.observation:
-                    state = step.observation[key]
-                    break
-            if state is None:
-                # Just use the first observation that's a numeric array
-                for value in step.observation.values():
-                    if isinstance(value, np.ndarray) and value.dtype.kind in "iuf":
-                        state = value
-                        break
+        actions = []
+
+        for step in steps:
+            # Extract state from observation
+            obs = step.get("observation", {})
+            state = obs.get("state", None)
             if state is not None:
+                if hasattr(state, "numpy"):
+                    state = state.numpy()
                 states.append(state)
-        return np.array(states) if states else np.array([])
 
-    def _extract_actions(self, episode: Episode) -> np.ndarray:
-        """Extract action vectors from episode steps.
+            # Extract action
+            action = step.get("action", None)
+            if action is not None:
+                if hasattr(action, "numpy"):
+                    action = action.numpy()
+                actions.append(action)
 
-        Args:
-            episode: Episode to extract actions from.
+        states = np.array(states) if states else np.array([])
+        actions = np.array(actions) if actions else np.array([])
 
-        Returns:
-            Array of shape (num_steps, action_dim).
-        """
-        return np.array([step.action for step in episode.steps])
+        return states, actions
 
     def plot_state(
         self,
@@ -90,8 +73,7 @@ class EpisodePlotter:
         except ImportError:
             raise ImportError("matplotlib is required for plotting. Install with: pip install matplotlib")
 
-        episode = self._get_episode(episode_index)
-        states = self._extract_states(episode)
+        states, _ = self._get_episode_data(episode_index)
 
         if states.size == 0:
             print(f"No state data found for episode {episode_index}")
@@ -138,8 +120,7 @@ class EpisodePlotter:
         except ImportError:
             raise ImportError("matplotlib is required for plotting. Install with: pip install matplotlib")
 
-        episode = self._get_episode(episode_index)
-        actions = self._extract_actions(episode)
+        _, actions = self._get_episode_data(episode_index)
 
         if actions.size == 0:
             print(f"No action data found for episode {episode_index}")
@@ -186,13 +167,11 @@ class EpisodePlotter:
         except ImportError:
             raise ImportError("matplotlib is required for plotting. Install with: pip install matplotlib")
 
-        episode = self._get_episode(episode_index)
-        states = self._extract_states(episode)
-        actions = self._extract_actions(episode)
+        states, actions = self._get_episode_data(episode_index)
 
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
 
-        time_steps = np.arange(max(len(states), len(actions)))
+        time_steps = np.arange(max(len(states) if states.size else 0, len(actions) if actions.size else 0))
 
         # Plot states
         if states.size > 0:

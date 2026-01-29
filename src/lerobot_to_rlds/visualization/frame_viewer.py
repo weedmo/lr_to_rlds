@@ -1,76 +1,56 @@
-"""Frame viewer for video frames in LeRobot datasets."""
+"""Frame viewer for images in RLDS datasets."""
 
 from pathlib import Path
 
 import numpy as np
 
-from lerobot_to_rlds.readers.base import Episode, LeRobotReader
+from lerobot_to_rlds.visualization.visualizer import DatasetVisualizer
 
 
 class FrameViewer:
-    """Viewer for video frames in LeRobot episodes."""
+    """Viewer for image frames in RLDS episodes."""
 
-    def __init__(self, reader: LeRobotReader) -> None:
+    def __init__(self, visualizer: DatasetVisualizer) -> None:
         """Initialize the frame viewer.
 
         Args:
-            reader: LeRobotReader instance for the dataset.
+            visualizer: DatasetVisualizer instance for the dataset.
         """
-        self.reader = reader
-
-    def _get_episode(self, episode_index: int) -> Episode:
-        """Get episode by index.
-
-        Args:
-            episode_index: The episode index.
-
-        Returns:
-            Episode object.
-        """
-        episodes = self.reader.list_episodes()
-        for ep_info in episodes:
-            if ep_info.episode_index == episode_index:
-                return self.reader.read_episode(ep_info)
-        raise IndexError(f"Episode index {episode_index} not found")
+        self.visualizer = visualizer
 
     def _get_frame(
         self,
-        episode: Episode,
+        episode_index: int,
         step_idx: int,
-        camera: str | None = None,
+        camera: str = "image",
     ) -> np.ndarray | None:
         """Get a frame from an episode step.
 
         Args:
-            episode: Episode to get frame from.
+            episode_index: Episode index.
             step_idx: Step index.
-            camera: Camera key (e.g., 'image', 'wrist_image'). If None, uses first available.
+            camera: Camera key (e.g., 'image', 'wrist_image').
 
         Returns:
             Frame as numpy array (H, W, C) or None if not found.
         """
-        if step_idx < 0 or step_idx >= len(episode.steps):
-            raise IndexError(f"Step index {step_idx} out of range (0-{len(episode.steps)-1})")
+        episode = self.visualizer.get_episode(episode_index)
+        steps = list(episode["steps"])
 
-        step = episode.steps[step_idx]
+        if step_idx < 0 or step_idx >= len(steps):
+            raise IndexError(f"Step index {step_idx} out of range (0-{len(steps)-1})")
 
-        # Find frame in observation
-        if camera is not None:
-            # Try exact key and with observation. prefix
-            for key in [camera, f"observation.{camera}"]:
-                if key in step.observation:
-                    frame = step.observation[key]
-                    if isinstance(frame, np.ndarray) and len(frame.shape) == 3:
-                        return frame
+        step = steps[step_idx]
+        obs = step.get("observation", {})
+
+        frame = obs.get(camera, None)
+        if frame is None:
             return None
 
-        # Find first image-like observation
-        for key, value in step.observation.items():
-            if isinstance(value, np.ndarray) and len(value.shape) == 3:
-                # Likely an image (H, W, C)
-                return value
+        if hasattr(frame, "numpy"):
+            frame = frame.numpy()
 
-        return None
+        return frame
 
     def list_cameras(self, episode_index: int) -> list[str]:
         """List available cameras in an episode.
@@ -81,15 +61,27 @@ class FrameViewer:
         Returns:
             List of camera keys.
         """
-        episode = self._get_episode(episode_index)
-        if not episode.steps:
+        episode = self.visualizer.get_episode(episode_index)
+        steps = list(episode["steps"])
+
+        if not steps:
             return []
 
         cameras = []
-        step = episode.steps[0]
-        for key, value in step.observation.items():
-            if isinstance(value, np.ndarray) and len(value.shape) == 3:
+        obs = steps[0].get("observation", {})
+
+        # Known image keys in OXE schema
+        for key in ["image", "wrist_image"]:
+            if key in obs:
                 cameras.append(key)
+
+        # Also check for any other image-like observations
+        for key, value in obs.items():
+            if key not in cameras:
+                if hasattr(value, "numpy"):
+                    value = value.numpy()
+                if isinstance(value, np.ndarray) and len(value.shape) == 3 and value.shape[-1] in [1, 3, 4]:
+                    cameras.append(key)
 
         return cameras
 
@@ -97,7 +89,7 @@ class FrameViewer:
         self,
         episode_index: int,
         step_idx: int,
-        camera: str | None = None,
+        camera: str = "image",
         save_path: Path | None = None,
         show: bool = True,
     ) -> None:
@@ -106,7 +98,7 @@ class FrameViewer:
         Args:
             episode_index: Episode index.
             step_idx: Step index within the episode.
-            camera: Camera to display. If None, uses first available.
+            camera: Camera to display.
             save_path: Optional path to save the image.
             show: Whether to display the image.
         """
@@ -115,18 +107,16 @@ class FrameViewer:
         except ImportError:
             raise ImportError("matplotlib is required for viewing. Install with: pip install matplotlib")
 
-        episode = self._get_episode(episode_index)
-        frame = self._get_frame(episode, step_idx, camera)
+        frame = self._get_frame(episode_index, step_idx, camera)
 
         if frame is None:
-            print(f"No frame found for episode {episode_index}, step {step_idx}")
+            print(f"No frame found for episode {episode_index}, step {step_idx}, camera '{camera}'")
             return
 
         fig, ax = plt.subplots(figsize=(8, 6))
         ax.imshow(frame)
         ax.axis("off")
-        camera_name = camera or "default"
-        ax.set_title(f"Episode {episode_index}, Step {step_idx} ({camera_name})")
+        ax.set_title(f"Episode {episode_index}, Step {step_idx} ({camera})")
 
         plt.tight_layout()
 
@@ -143,7 +133,7 @@ class FrameViewer:
         self,
         episode_index: int,
         step_indices: list[int],
-        camera: str | None = None,
+        camera: str = "image",
         cols: int = 4,
         save_path: Path | None = None,
         show: bool = True,
@@ -153,7 +143,7 @@ class FrameViewer:
         Args:
             episode_index: Episode index.
             step_indices: List of step indices to display.
-            camera: Camera to display. If None, uses first available.
+            camera: Camera to display.
             cols: Number of columns in the grid.
             save_path: Optional path to save the image.
             show: Whether to display the image.
@@ -163,18 +153,19 @@ class FrameViewer:
         except ImportError:
             raise ImportError("matplotlib is required for viewing. Install with: pip install matplotlib")
 
-        episode = self._get_episode(episode_index)
-
         frames = []
         valid_indices = []
         for idx in step_indices:
-            frame = self._get_frame(episode, idx, camera)
-            if frame is not None:
-                frames.append(frame)
-                valid_indices.append(idx)
+            try:
+                frame = self._get_frame(episode_index, idx, camera)
+                if frame is not None:
+                    frames.append(frame)
+                    valid_indices.append(idx)
+            except IndexError:
+                continue
 
         if not frames:
-            print(f"No frames found for episode {episode_index}")
+            print(f"No frames found for episode {episode_index}, camera '{camera}'")
             return
 
         rows = (len(frames) + cols - 1) // cols
@@ -199,8 +190,7 @@ class FrameViewer:
             row, col = i // cols, i % cols
             axes[row][col].axis("off")
 
-        camera_name = camera or "default"
-        fig.suptitle(f"Episode {episode_index} - {camera_name}", fontsize=14)
+        fig.suptitle(f"Episode {episode_index} - {camera}", fontsize=14)
         plt.tight_layout()
 
         if save_path:
@@ -216,7 +206,7 @@ class FrameViewer:
         self,
         episode_index: int,
         output_dir: Path,
-        camera: str | None = None,
+        camera: str = "image",
         step_range: tuple[int, int] | None = None,
     ) -> list[Path]:
         """Save episode frames as PNG images.
@@ -224,7 +214,7 @@ class FrameViewer:
         Args:
             episode_index: Episode to export.
             output_dir: Directory to save images.
-            camera: Camera to export. If None, uses first available.
+            camera: Camera to export.
             step_range: Optional (start, end) range of steps. If None, exports all.
 
         Returns:
@@ -235,27 +225,31 @@ class FrameViewer:
         except ImportError:
             raise ImportError("pillow is required for saving. Install with: pip install pillow")
 
-        episode = self._get_episode(episode_index)
+        episode = self.visualizer.get_episode(episode_index)
+        steps = list(episode["steps"])
+
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         if step_range:
             start, end = step_range
-            indices = range(start, min(end, len(episode.steps)))
+            indices = range(start, min(end, len(steps)))
         else:
-            indices = range(len(episode.steps))
+            indices = range(len(steps))
 
         saved_paths = []
         for idx in indices:
-            frame = self._get_frame(episode, idx, camera)
+            frame = self._get_frame(episode_index, idx, camera)
             if frame is not None:
                 # Ensure uint8 format
                 if frame.dtype != np.uint8:
-                    frame = (frame * 255).astype(np.uint8) if frame.max() <= 1.0 else frame.astype(np.uint8)
+                    if frame.max() <= 1.0:
+                        frame = (frame * 255).astype(np.uint8)
+                    else:
+                        frame = frame.astype(np.uint8)
 
                 img = Image.fromarray(frame)
-                camera_name = camera or "cam"
-                path = output_dir / f"ep{episode_index:04d}_step{idx:06d}_{camera_name}.png"
+                path = output_dir / f"ep{episode_index:04d}_step{idx:06d}_{camera}.png"
                 img.save(path)
                 saved_paths.append(path)
 

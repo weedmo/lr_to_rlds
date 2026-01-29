@@ -25,20 +25,17 @@ pytest
 # Convert a dataset (outputs to data/<folder_name>/ by default)
 lerobot-to-rlds convert /path/to/lerobot/dataset
 
-# Convert with custom name
-lerobot-to-rlds convert /path/to/lerobot/dataset -n my_task_name
-
-# Convert with explicit output path
-lerobot-to-rlds convert /path/to/lerobot/dataset -o ./custom/output
+# Visualize converted RLDS dataset
+lerobot-to-rlds visualize list ./data/my_dataset
 ```
 
 ## Architecture
 
 ```
 LeRobot Dataset → [Reader] → [OXE Writer] → RLDS Dataset (tfds.load compatible)
-                     ↓
-              rlds submodule
-              (EpisodeWriter)
+                     ↓                              ↓
+              rlds submodule                 Visualization
+              (EpisodeWriter)                (tfds.load)
 ```
 
 ### Output Formats
@@ -53,7 +50,7 @@ LeRobot Dataset → [Reader] → [OXE Writer] → RLDS Dataset (tfds.load compat
 ```
 lerobot_to_rlds/
 ├── main.sh                 # Interactive entry point
-├── data/                   # Default output directory
+├── data/                   # Default output directory (RLDS datasets)
 ├── rlds/                   # git submodule (google-research/rlds)
 │   └── rlds/
 │       ├── rlds_types.py   # build_step(), build_episode()
@@ -62,7 +59,7 @@ lerobot_to_rlds/
 ├── src/lerobot_to_rlds/
 │   ├── cli.py              # Click CLI entry point
 │   ├── core/               # Types, exceptions, constants
-│   ├── readers/            # LeRobot v2.1/v3.0 readers
+│   ├── readers/            # LeRobot v2.1/v3.0 readers (source)
 │   │   ├── base.py         # Step, Episode, LeRobotReader
 │   │   ├── v21_reader.py   # v2.1 reader
 │   │   └── v30_reader.py   # v3.0 reader
@@ -73,7 +70,7 @@ lerobot_to_rlds/
 │   ├── utils/
 │   │   ├── logging.py      # Logging utilities
 │   │   └── naming.py       # Folder name sanitization, output path
-│   ├── visualization/      # Dataset visualization
+│   ├── visualization/      # RLDS dataset visualization (tfds.load)
 │   │   ├── visualizer.py   # DatasetVisualizer, EpisodeSummary
 │   │   ├── plotter.py      # EpisodePlotter (matplotlib)
 │   │   └── frame_viewer.py # FrameViewer
@@ -87,48 +84,48 @@ lerobot_to_rlds/
 # Interactive menu
 ./main.sh
 
-# List datasets in data/
+# List RLDS datasets in data/
 lerobot-to-rlds list-datasets
 lerobot-to-rlds list-datasets --data-dir /custom/path
 
-# Discover dataset structure
-lerobot-to-rlds discover <dataset_path>
+# Discover LeRobot source dataset structure
+lerobot-to-rlds discover <lerobot_path>
 
-# Convert (outputs to data/<folder_name>/ by default)
-lerobot-to-rlds convert <dataset_path>
-lerobot-to-rlds convert <dataset_path> -n custom_name      # Custom folder name
-lerobot-to-rlds convert <dataset_path> -o /explicit/path   # Explicit output
-lerobot-to-rlds convert <dataset_path> -f legacy           # Legacy format
-lerobot-to-rlds convert <dataset_path> --resume            # Resume from checkpoint
+# Convert LeRobot → RLDS (outputs to data/<folder_name>/ by default)
+lerobot-to-rlds convert <lerobot_path>
+lerobot-to-rlds convert <lerobot_path> -n custom_name      # Custom folder name
+lerobot-to-rlds convert <lerobot_path> -o /explicit/path   # Explicit output
+lerobot-to-rlds convert <lerobot_path> -f legacy           # Legacy format
+lerobot-to-rlds convert <lerobot_path> --resume            # Resume from checkpoint
 
-# Visualization commands
-lerobot-to-rlds visualize list <path>                      # List episodes
-lerobot-to-rlds visualize info <path>                      # Detailed info
-lerobot-to-rlds visualize plot <path> -e 0 -t both         # Plot state/action
-lerobot-to-rlds visualize plot <path> -e 0 -s plot.png --no-show  # Save plot
-lerobot-to-rlds visualize frames <path> -e 0 -s 50         # View single frame
-lerobot-to-rlds visualize frames <path> -e 0 --steps 0,10,20,30   # Frame grid
-lerobot-to-rlds visualize cameras <path> -e 0              # List cameras
-lerobot-to-rlds visualize export-frames <path> ./output -e 0      # Export PNGs
+# Visualize RLDS dataset (converted output)
+lerobot-to-rlds visualize list <rlds_path>                 # List episodes
+lerobot-to-rlds visualize info <rlds_path>                 # Detailed info
+lerobot-to-rlds visualize plot <rlds_path> -e 0 -t both    # Plot state/action
+lerobot-to-rlds visualize plot <rlds_path> -e 0 -s plot.png --no-show  # Save plot
+lerobot-to-rlds visualize frames <rlds_path> -e 0 -s 50    # View single frame
+lerobot-to-rlds visualize frames <rlds_path> -e 0 --steps 0,10,20,30   # Frame grid
+lerobot-to-rlds visualize cameras <rlds_path> -e 0         # List cameras
+lerobot-to-rlds visualize export-frames <rlds_path> ./output -e 0      # Export PNGs
 
 # Verbose logging
-lerobot-to-rlds -v convert <dataset_path>
+lerobot-to-rlds -v convert <lerobot_path>
 ```
 
 ## main.sh Interactive Menu
 
 ```
 Main Menu:
-  1) List datasets in data/
-  2) Discover dataset structure
-  3) Visualize dataset →
+  1) List RLDS datasets in data/
+  2) Discover LeRobot dataset (source)
+  3) Visualize RLDS dataset →
        1) List episodes
        2) Show dataset info
        3) Plot state/action
        4) View frames
        5) List cameras
        6) Export frames as images
-  4) Convert dataset
+  4) Convert LeRobot to RLDS
   h) Help
   q) Quit
 ```
@@ -138,6 +135,41 @@ Features:
 - Paths relative to data/ by default
 - Task name extraction from folder name
 
+## Workflow
+
+```
+1. Source (LeRobot)          2. Convert              3. Output (RLDS)
+   /path/to/lerobot/     →   lerobot-to-rlds    →   data/<name>/
+   ├── meta/                  convert                ├── dataset_info.json
+   │   └── info.json                                 ├── features.json
+   └── data/                                         └── *.tfrecord
+       └── *.parquet
+                                                  4. Visualize
+                                                     lerobot-to-rlds visualize list data/<name>/
+```
+
+## RLDS Visualization API
+
+```python
+from lerobot_to_rlds.visualization import DatasetVisualizer, EpisodePlotter, FrameViewer
+from pathlib import Path
+
+# List episodes from converted RLDS dataset
+viz = DatasetVisualizer(Path("./data/my_dataset"))
+viz.print_episodes_table()
+viz.print_dataset_info()
+
+# Plot state/action
+plotter = EpisodePlotter(viz)
+plotter.plot(episode_index=0, plot_type="both", save_path=Path("plot.png"))
+
+# View frames
+viewer = FrameViewer(viz)
+viewer.display_frame(episode_index=0, step_idx=50, camera="image")
+viewer.display_frame_grid(episode_index=0, step_indices=[0, 10, 20, 30])
+viewer.save_frames_as_images(episode_index=0, output_dir=Path("./frames"))
+```
+
 ## OXE/OpenVLA Compatible Output
 
 The default `oxe` format produces datasets loadable with `tfds.load()`:
@@ -146,7 +178,7 @@ The default `oxe` format produces datasets loadable with `tfds.load()`:
 import tensorflow_datasets as tfds
 
 # Load converted dataset
-ds = tfds.load('dataset_name', data_dir='./data', split='train')
+ds = tfds.load('my_dataset', data_dir='./data', split='train')
 
 for episode in ds.take(1):
     for step in episode['steps']:
@@ -176,54 +208,13 @@ for episode in ds.take(1):
 }
 ```
 
-## Conversion Pipeline
-
-```python
-from lerobot_to_rlds.pipeline import convert_dataset
-from lerobot_to_rlds.core.types import ConvertMode
-
-result = convert_dataset(
-    dataset_path=Path("/path/to/lerobot/dataset"),
-    output_dir=Path("./data/my_task"),  # or use get_output_path()
-    mode=ConvertMode.SAFE,
-    output_format="oxe",  # or "legacy"
-)
-
-if result.success:
-    print(f"Converted {result.episodes_converted} episodes")
-    print(f"Output: {result.output_path}")
-```
-
-## Visualization API
-
-```python
-from lerobot_to_rlds.visualization import DatasetVisualizer, EpisodePlotter, FrameViewer
-from lerobot_to_rlds.readers import get_reader
-
-# List episodes
-viz = DatasetVisualizer(Path("./dataset"))
-viz.print_episodes_table()
-viz.print_dataset_info()
-
-# Plot state/action
-reader = get_reader(Path("./dataset"))
-plotter = EpisodePlotter(reader)
-plotter.plot(episode_index=0, plot_type="both", save_path=Path("plot.png"))
-
-# View frames
-viewer = FrameViewer(reader)
-viewer.display_frame(episode_index=0, step_idx=50)
-viewer.display_frame_grid(episode_index=0, step_indices=[0, 10, 20, 30])
-viewer.save_frames_as_images(episode_index=0, output_dir=Path("./frames"))
-```
-
 ## Current Status
 
 - ✅ LeRobot v2.1/v3.0 readers
 - ✅ OXE-compatible writer (`rlds.tfds.EpisodeWriter`)
 - ✅ `tfds.load()` compatible output
 - ✅ Resume from checkpoint
-- ✅ Visualization (list, plot, frames)
+- ✅ RLDS visualization (list, plot, frames)
 - ✅ Interactive menu (main.sh)
 - ✅ Auto output to data/<task_name>/
 - ⏳ PARALLEL modes: Planned
@@ -260,16 +251,6 @@ pytest
 pytest --cov=src/lerobot_to_rlds --cov-report=term-missing
 ```
 
-## Ralph Loop Integration
-
-```bash
-cd /home/weed/tommoro/lerobot_to_rlds
-claude
-> ralph
-```
-
-See `.ralph/fix_plan.md` for current development focus.
-
 ## Key Files
 
 | File | Purpose |
@@ -277,9 +258,9 @@ See `.ralph/fix_plan.md` for current development focus.
 | `main.sh` | Interactive entry point |
 | `cli.py` | Click CLI with visualize subcommands |
 | `utils/naming.py` | Folder name sanitization, output path |
-| `visualization/visualizer.py` | DatasetVisualizer coordinator |
+| `visualization/visualizer.py` | RLDS DatasetVisualizer (tfds.load) |
 | `visualization/plotter.py` | State/action plotting |
-| `visualization/frame_viewer.py` | Video frame display |
+| `visualization/frame_viewer.py` | Image frame display |
 | `writers/oxe_writer.py` | OXE-compatible writer using rlds submodule |
 | `writers/feature_mapper.py` | LeRobot → OXE feature mapping |
 | `pipeline/convert.py` | Conversion orchestrator with format selection |

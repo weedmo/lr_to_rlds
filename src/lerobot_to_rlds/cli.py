@@ -216,34 +216,29 @@ def run(dataset_path: Path, output: Path, mode: str) -> None:
     help=f"Data directory to scan. Defaults to '{DEFAULT_OUTPUT_BASE}'.",
 )
 def list_datasets(data_dir: Path) -> None:
-    """List datasets in the data directory."""
+    """List RLDS datasets in the data directory."""
     data_dir = Path(data_dir)
 
     if not data_dir.exists():
         click.echo(f"Data directory does not exist: {data_dir}")
         return
 
-    # Find subdirectories that look like datasets
+    # Find subdirectories that look like RLDS datasets
     datasets = []
     for path in sorted(data_dir.iterdir()):
         if path.is_dir():
-            # Check if it looks like an RLDS dataset (has certain files)
-            has_rlds = (path / "dataset_info.json").exists() or any(path.glob("*.tfrecord*"))
-            # Check if it looks like a LeRobot dataset
-            has_lerobot = (path / "meta" / "info.json").exists()
-
-            if has_rlds:
+            # Check if it looks like an RLDS dataset (has dataset_info.json)
+            if (path / "dataset_info.json").exists():
                 datasets.append((path.name, "RLDS"))
-            elif has_lerobot:
-                datasets.append((path.name, "LeRobot"))
-            else:
-                datasets.append((path.name, "Unknown"))
+            elif any(path.glob("*/dataset_info.json")):
+                # Nested structure
+                datasets.append((path.name, "RLDS"))
 
     if not datasets:
-        click.echo(f"No datasets found in {data_dir}")
+        click.echo(f"No RLDS datasets found in {data_dir}")
         return
 
-    click.echo(f"\nDatasets in {data_dir}:")
+    click.echo(f"\nRLDS Datasets in {data_dir}:")
     click.echo("-" * 50)
     click.echo(f"{'Name':<35} {'Type':<15}")
     click.echo("-" * 50)
@@ -256,19 +251,31 @@ def list_datasets(data_dir: Path) -> None:
 # Visualization command group
 @main.group()
 def visualize() -> None:
-    """Visualize LeRobot datasets."""
+    """Visualize RLDS datasets."""
     pass
 
 
 @visualize.command("list")
 @click.argument("dataset_path", type=click.Path(exists=True, path_type=Path))
-def visualize_list(dataset_path: Path) -> None:
-    """List episodes in a LeRobot dataset."""
+@click.option(
+    "--name", "-n",
+    type=str,
+    default=None,
+    help="Dataset name (auto-detected if not provided).",
+)
+@click.option(
+    "--max-episodes", "-m",
+    type=int,
+    default=100,
+    help="Maximum number of episodes to display.",
+)
+def visualize_list(dataset_path: Path, name: str | None, max_episodes: int) -> None:
+    """List episodes in an RLDS dataset."""
     from lerobot_to_rlds.visualization import DatasetVisualizer
 
     try:
-        viz = DatasetVisualizer(dataset_path)
-        viz.print_episodes_table()
+        viz = DatasetVisualizer(dataset_path, dataset_name=name)
+        viz.print_episodes_table(max_episodes=max_episodes)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         raise SystemExit(1)
@@ -276,12 +283,18 @@ def visualize_list(dataset_path: Path) -> None:
 
 @visualize.command("info")
 @click.argument("dataset_path", type=click.Path(exists=True, path_type=Path))
-def visualize_info(dataset_path: Path) -> None:
-    """Show detailed dataset information."""
+@click.option(
+    "--name", "-n",
+    type=str,
+    default=None,
+    help="Dataset name (auto-detected if not provided).",
+)
+def visualize_info(dataset_path: Path, name: str | None) -> None:
+    """Show detailed RLDS dataset information."""
     from lerobot_to_rlds.visualization import DatasetVisualizer
 
     try:
-        viz = DatasetVisualizer(dataset_path)
+        viz = DatasetVisualizer(dataset_path, dataset_name=name)
         viz.print_dataset_info()
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
@@ -290,6 +303,12 @@ def visualize_info(dataset_path: Path) -> None:
 
 @visualize.command("plot")
 @click.argument("dataset_path", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--name", "-n",
+    type=str,
+    default=None,
+    help="Dataset name (auto-detected if not provided).",
+)
 @click.option(
     "--episode", "-e",
     type=int,
@@ -316,18 +335,18 @@ def visualize_info(dataset_path: Path) -> None:
 )
 def visualize_plot(
     dataset_path: Path,
+    name: str | None,
     episode: int,
     plot_type: str,
     save: Path | None,
     no_show: bool,
 ) -> None:
     """Plot state and/or action for an episode."""
-    from lerobot_to_rlds.readers import get_reader
-    from lerobot_to_rlds.visualization import EpisodePlotter
+    from lerobot_to_rlds.visualization import DatasetVisualizer, EpisodePlotter
 
     try:
-        reader = get_reader(dataset_path)
-        plotter = EpisodePlotter(reader)
+        viz = DatasetVisualizer(dataset_path, dataset_name=name)
+        plotter = EpisodePlotter(viz)
         plotter.plot(episode, plot_type=plot_type, save_path=save, show=not no_show)
     except ImportError as e:
         click.echo(f"Error: {e}", err=True)
@@ -340,6 +359,12 @@ def visualize_plot(
 
 @visualize.command("frames")
 @click.argument("dataset_path", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--name", "-n",
+    type=str,
+    default=None,
+    help="Dataset name (auto-detected if not provided).",
+)
 @click.option(
     "--episode", "-e",
     type=int,
@@ -361,8 +386,8 @@ def visualize_plot(
 @click.option(
     "--camera", "-c",
     type=str,
-    default=None,
-    help="Camera key to display.",
+    default="image",
+    help="Camera key to display (default: 'image').",
 )
 @click.option(
     "--save", "-o",
@@ -377,20 +402,20 @@ def visualize_plot(
 )
 def visualize_frames(
     dataset_path: Path,
+    name: str | None,
     episode: int,
     step: int | None,
     steps: str | None,
-    camera: str | None,
+    camera: str,
     save: Path | None,
     no_show: bool,
 ) -> None:
-    """View video frames from an episode."""
-    from lerobot_to_rlds.readers import get_reader
-    from lerobot_to_rlds.visualization import FrameViewer
+    """View image frames from an RLDS episode."""
+    from lerobot_to_rlds.visualization import DatasetVisualizer, FrameViewer
 
     try:
-        reader = get_reader(dataset_path)
-        viewer = FrameViewer(reader)
+        viz = DatasetVisualizer(dataset_path, dataset_name=name)
+        viewer = FrameViewer(viz)
 
         if steps:
             # Grid view
@@ -418,19 +443,24 @@ def visualize_frames(
 @visualize.command("cameras")
 @click.argument("dataset_path", type=click.Path(exists=True, path_type=Path))
 @click.option(
+    "--name", "-n",
+    type=str,
+    default=None,
+    help="Dataset name (auto-detected if not provided).",
+)
+@click.option(
     "--episode", "-e",
     type=int,
     default=0,
     help="Episode index to check.",
 )
-def visualize_cameras(dataset_path: Path, episode: int) -> None:
-    """List available cameras in an episode."""
-    from lerobot_to_rlds.readers import get_reader
-    from lerobot_to_rlds.visualization import FrameViewer
+def visualize_cameras(dataset_path: Path, name: str | None, episode: int) -> None:
+    """List available cameras in an RLDS episode."""
+    from lerobot_to_rlds.visualization import DatasetVisualizer, FrameViewer
 
     try:
-        reader = get_reader(dataset_path)
-        viewer = FrameViewer(reader)
+        viz = DatasetVisualizer(dataset_path, dataset_name=name)
+        viewer = FrameViewer(viz)
         cameras = viewer.list_cameras(episode)
 
         if cameras:
@@ -448,6 +478,12 @@ def visualize_cameras(dataset_path: Path, episode: int) -> None:
 @click.argument("dataset_path", type=click.Path(exists=True, path_type=Path))
 @click.argument("output_dir", type=click.Path(path_type=Path))
 @click.option(
+    "--name", "-n",
+    type=str,
+    default=None,
+    help="Dataset name (auto-detected if not provided).",
+)
+@click.option(
     "--episode", "-e",
     type=int,
     default=0,
@@ -456,8 +492,8 @@ def visualize_cameras(dataset_path: Path, episode: int) -> None:
 @click.option(
     "--camera", "-c",
     type=str,
-    default=None,
-    help="Camera to export.",
+    default="image",
+    help="Camera to export (default: 'image').",
 )
 @click.option(
     "--start",
@@ -474,18 +510,18 @@ def visualize_cameras(dataset_path: Path, episode: int) -> None:
 def visualize_export_frames(
     dataset_path: Path,
     output_dir: Path,
+    name: str | None,
     episode: int,
-    camera: str | None,
+    camera: str,
     start: int | None,
     end: int | None,
 ) -> None:
-    """Export video frames as PNG images."""
-    from lerobot_to_rlds.readers import get_reader
-    from lerobot_to_rlds.visualization import FrameViewer
+    """Export image frames from RLDS episode as PNG images."""
+    from lerobot_to_rlds.visualization import DatasetVisualizer, FrameViewer
 
     try:
-        reader = get_reader(dataset_path)
-        viewer = FrameViewer(reader)
+        viz = DatasetVisualizer(dataset_path, dataset_name=name)
+        viewer = FrameViewer(viz)
 
         step_range = None
         if start is not None or end is not None:
