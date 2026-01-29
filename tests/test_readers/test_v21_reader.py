@@ -20,7 +20,7 @@ class TestV21Reader:
     def v21_dataset(self, tmp_path: Path) -> Path:
         """Create a minimal v2.1 dataset for testing."""
         meta_dir = tmp_path / "meta"
-        data_dir = tmp_path / "data" / "chunk-0"
+        data_dir = tmp_path / "data" / "chunk-000"
         meta_dir.mkdir(parents=True)
         data_dir.mkdir(parents=True)
 
@@ -210,7 +210,7 @@ class TestV21Reader:
     def test_read_episode_with_reward(self, tmp_path: Path) -> None:
         """Should read reward from parquet if present."""
         meta_dir = tmp_path / "meta"
-        data_dir = tmp_path / "data" / "chunk-0"
+        data_dir = tmp_path / "data" / "chunk-000"
         meta_dir.mkdir(parents=True)
         data_dir.mkdir(parents=True)
 

@@ -13,7 +13,7 @@ _rlds_path = Path(__file__).parent.parent.parent.parent / "rlds"
 if str(_rlds_path) not in sys.path:
     sys.path.insert(0, str(_rlds_path))
 
-from rlds import rlds_types
+from rlds.rlds_types import build_step, build_episode, Episode as RLDSEpisode, Step as RLDSStep
 from rlds.tfds import episode_writer
 
 from lerobot_to_rlds.readers.base import Episode, LeRobotReader, Step
@@ -153,7 +153,7 @@ class OXERLDSWriter:
                 errors=self._errors,
             )
 
-    def _convert_episode(self, episode: Episode) -> rlds_types.Episode:
+    def _convert_episode(self, episode: Episode) -> RLDSEpisode:
         """Convert LeRobot Episode to RLDS Episode format.
 
         Args:
@@ -164,14 +164,14 @@ class OXERLDSWriter:
         """
         steps = [self._convert_step(step) for step in episode.steps]
 
-        return rlds_types.build_episode(
+        return build_episode(
             steps=steps,
             metadata={
                 "file_path": str(episode.info.data_path),
             },
         )
 
-    def _convert_step(self, step: Step) -> rlds_types.Step:
+    def _convert_step(self, step: Step) -> RLDSStep:
         """Convert LeRobot Step to RLDS Step format.
 
         Args:
@@ -196,7 +196,7 @@ class OXERLDSWriter:
                     value = (value * 255).clip(0, 255).astype(np.uint8)
                 observation[oxe_key] = value
 
-        return rlds_types.build_step(
+        return build_step(
             observation=observation,
             action=step.action.astype(np.float32),
             reward=np.float32(step.reward),
