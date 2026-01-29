@@ -9,6 +9,7 @@ import click
 from lerobot_to_rlds import __version__
 from lerobot_to_rlds.core.types import ConvertMode
 from lerobot_to_rlds.pipeline import convert_dataset
+from lerobot_to_rlds.utils.naming import get_output_path, DEFAULT_OUTPUT_BASE
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -78,8 +79,14 @@ def discover(dataset_path: Path, output: Path) -> None:
 @click.option(
     "--output", "-o",
     type=click.Path(path_type=Path),
-    default=Path("./output"),
-    help="Output directory for RLDS dataset.",
+    default=None,
+    help="Output directory for RLDS dataset. Defaults to data/<task_name>/.",
+)
+@click.option(
+    "--name", "-n",
+    type=str,
+    default=None,
+    help="Custom name for the output folder (used with default output path).",
 )
 @click.option(
     "--mode", "-m",
@@ -105,7 +112,8 @@ def discover(dataset_path: Path, output: Path) -> None:
 )
 def convert(
     dataset_path: Path,
-    output: Path,
+    output: Path | None,
+    name: str | None,
     mode: str,
     format: str,
     resume: bool,
@@ -114,7 +122,14 @@ def convert(
     """Convert a LeRobot dataset to RLDS format.
 
     Runs the full conversion pipeline: discover, spec, convert, validate.
+
+    If --output is not specified, outputs to data/<folder_name>/ by default.
+    Use --name to customize the output folder name.
     """
+    # Determine output path
+    if output is None:
+        output = get_output_path(dataset_path, output_name=name)
+
     convert_mode = ConvertMode(mode)
     click.echo(f"Converting dataset: {dataset_path}")
     click.echo(f"Output directory: {output}")
@@ -134,13 +149,13 @@ def convert(
 
     if result.success:
         click.echo("")
-        click.echo(click.style("✓ Conversion successful!", fg="green"))
+        click.echo(click.style("Conversion successful!", fg="green"))
         click.echo(f"  Episodes: {result.episodes_converted}")
         click.echo(f"  Total steps: {result.total_steps}")
         click.echo(f"  Output: {result.output_path}")
     else:
         click.echo("")
-        click.echo(click.style("✗ Conversion failed!", fg="red"))
+        click.echo(click.style("Conversion failed!", fg="red"))
         for error in result.errors:
             click.echo(f"  - {error}", err=True)
         raise SystemExit(1)
@@ -191,6 +206,300 @@ def run(dataset_path: Path, output: Path, mode: str) -> None:
     click.echo(f"Mode: {convert_mode.value}")
     # TODO: Implement full pipeline
     click.echo("Full pipeline not yet implemented.")
+
+
+@main.command("list-datasets")
+@click.option(
+    "--data-dir", "-d",
+    type=click.Path(exists=True, path_type=Path),
+    default=DEFAULT_OUTPUT_BASE,
+    help=f"Data directory to scan. Defaults to '{DEFAULT_OUTPUT_BASE}'.",
+)
+def list_datasets(data_dir: Path) -> None:
+    """List datasets in the data directory."""
+    data_dir = Path(data_dir)
+
+    if not data_dir.exists():
+        click.echo(f"Data directory does not exist: {data_dir}")
+        return
+
+    # Find subdirectories that look like datasets
+    datasets = []
+    for path in sorted(data_dir.iterdir()):
+        if path.is_dir():
+            # Check if it looks like an RLDS dataset (has certain files)
+            has_rlds = (path / "dataset_info.json").exists() or any(path.glob("*.tfrecord*"))
+            # Check if it looks like a LeRobot dataset
+            has_lerobot = (path / "meta" / "info.json").exists()
+
+            if has_rlds:
+                datasets.append((path.name, "RLDS"))
+            elif has_lerobot:
+                datasets.append((path.name, "LeRobot"))
+            else:
+                datasets.append((path.name, "Unknown"))
+
+    if not datasets:
+        click.echo(f"No datasets found in {data_dir}")
+        return
+
+    click.echo(f"\nDatasets in {data_dir}:")
+    click.echo("-" * 50)
+    click.echo(f"{'Name':<35} {'Type':<15}")
+    click.echo("-" * 50)
+    for name, dtype in datasets:
+        click.echo(f"{name:<35} {dtype:<15}")
+    click.echo("-" * 50)
+    click.echo(f"Total: {len(datasets)} dataset(s)")
+
+
+# Visualization command group
+@main.group()
+def visualize() -> None:
+    """Visualize LeRobot datasets."""
+    pass
+
+
+@visualize.command("list")
+@click.argument("dataset_path", type=click.Path(exists=True, path_type=Path))
+def visualize_list(dataset_path: Path) -> None:
+    """List episodes in a LeRobot dataset."""
+    from lerobot_to_rlds.visualization import DatasetVisualizer
+
+    try:
+        viz = DatasetVisualizer(dataset_path)
+        viz.print_episodes_table()
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1)
+
+
+@visualize.command("info")
+@click.argument("dataset_path", type=click.Path(exists=True, path_type=Path))
+def visualize_info(dataset_path: Path) -> None:
+    """Show detailed dataset information."""
+    from lerobot_to_rlds.visualization import DatasetVisualizer
+
+    try:
+        viz = DatasetVisualizer(dataset_path)
+        viz.print_dataset_info()
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1)
+
+
+@visualize.command("plot")
+@click.argument("dataset_path", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--episode", "-e",
+    type=int,
+    default=0,
+    help="Episode index to plot.",
+)
+@click.option(
+    "--type", "-t",
+    "plot_type",
+    type=click.Choice(["state", "action", "both"]),
+    default="both",
+    help="Type of plot.",
+)
+@click.option(
+    "--save", "-s",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Save plot to file instead of displaying.",
+)
+@click.option(
+    "--no-show",
+    is_flag=True,
+    help="Don't display the plot (use with --save).",
+)
+def visualize_plot(
+    dataset_path: Path,
+    episode: int,
+    plot_type: str,
+    save: Path | None,
+    no_show: bool,
+) -> None:
+    """Plot state and/or action for an episode."""
+    from lerobot_to_rlds.readers import get_reader
+    from lerobot_to_rlds.visualization import EpisodePlotter
+
+    try:
+        reader = get_reader(dataset_path)
+        plotter = EpisodePlotter(reader)
+        plotter.plot(episode, plot_type=plot_type, save_path=save, show=not no_show)
+    except ImportError as e:
+        click.echo(f"Error: {e}", err=True)
+        click.echo("Install matplotlib with: pip install matplotlib", err=True)
+        raise SystemExit(1)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1)
+
+
+@visualize.command("frames")
+@click.argument("dataset_path", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--episode", "-e",
+    type=int,
+    default=0,
+    help="Episode index.",
+)
+@click.option(
+    "--step", "-s",
+    type=int,
+    default=None,
+    help="Single step index to display.",
+)
+@click.option(
+    "--steps",
+    type=str,
+    default=None,
+    help="Comma-separated step indices for grid view (e.g., '0,10,20,30').",
+)
+@click.option(
+    "--camera", "-c",
+    type=str,
+    default=None,
+    help="Camera key to display.",
+)
+@click.option(
+    "--save", "-o",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Save frame(s) to file.",
+)
+@click.option(
+    "--no-show",
+    is_flag=True,
+    help="Don't display (use with --save).",
+)
+def visualize_frames(
+    dataset_path: Path,
+    episode: int,
+    step: int | None,
+    steps: str | None,
+    camera: str | None,
+    save: Path | None,
+    no_show: bool,
+) -> None:
+    """View video frames from an episode."""
+    from lerobot_to_rlds.readers import get_reader
+    from lerobot_to_rlds.visualization import FrameViewer
+
+    try:
+        reader = get_reader(dataset_path)
+        viewer = FrameViewer(reader)
+
+        if steps:
+            # Grid view
+            step_indices = [int(s.strip()) for s in steps.split(",")]
+            viewer.display_frame_grid(
+                episode, step_indices, camera=camera,
+                save_path=save, show=not no_show
+            )
+        else:
+            # Single frame view
+            step_idx = step if step is not None else 0
+            viewer.display_frame(
+                episode, step_idx, camera=camera,
+                save_path=save, show=not no_show
+            )
+    except ImportError as e:
+        click.echo(f"Error: {e}", err=True)
+        click.echo("Install matplotlib with: pip install matplotlib", err=True)
+        raise SystemExit(1)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1)
+
+
+@visualize.command("cameras")
+@click.argument("dataset_path", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--episode", "-e",
+    type=int,
+    default=0,
+    help="Episode index to check.",
+)
+def visualize_cameras(dataset_path: Path, episode: int) -> None:
+    """List available cameras in an episode."""
+    from lerobot_to_rlds.readers import get_reader
+    from lerobot_to_rlds.visualization import FrameViewer
+
+    try:
+        reader = get_reader(dataset_path)
+        viewer = FrameViewer(reader)
+        cameras = viewer.list_cameras(episode)
+
+        if cameras:
+            click.echo(f"Cameras in episode {episode}:")
+            for cam in cameras:
+                click.echo(f"  - {cam}")
+        else:
+            click.echo(f"No cameras found in episode {episode}")
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1)
+
+
+@visualize.command("export-frames")
+@click.argument("dataset_path", type=click.Path(exists=True, path_type=Path))
+@click.argument("output_dir", type=click.Path(path_type=Path))
+@click.option(
+    "--episode", "-e",
+    type=int,
+    default=0,
+    help="Episode index.",
+)
+@click.option(
+    "--camera", "-c",
+    type=str,
+    default=None,
+    help="Camera to export.",
+)
+@click.option(
+    "--start",
+    type=int,
+    default=None,
+    help="Start step index.",
+)
+@click.option(
+    "--end",
+    type=int,
+    default=None,
+    help="End step index.",
+)
+def visualize_export_frames(
+    dataset_path: Path,
+    output_dir: Path,
+    episode: int,
+    camera: str | None,
+    start: int | None,
+    end: int | None,
+) -> None:
+    """Export video frames as PNG images."""
+    from lerobot_to_rlds.readers import get_reader
+    from lerobot_to_rlds.visualization import FrameViewer
+
+    try:
+        reader = get_reader(dataset_path)
+        viewer = FrameViewer(reader)
+
+        step_range = None
+        if start is not None or end is not None:
+            s = start or 0
+            e = end or 999999
+            step_range = (s, e)
+
+        paths = viewer.save_frames_as_images(
+            episode, output_dir, camera=camera, step_range=step_range
+        )
+        click.echo(f"Exported {len(paths)} frames to {output_dir}")
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
