@@ -1,0 +1,3 @@
+[submodule "rlds"]
+	path = rlds
+	url = https://github.com/google-research/rlds.git

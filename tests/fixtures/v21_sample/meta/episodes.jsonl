@@ -1,0 +1,2 @@
+{"episode_index": 0, "start_idx": 0, "end_idx": 5, "length": 5, "task": "pick object"}
+{"episode_index": 1, "start_idx": 5, "end_idx": 10, "length": 5, "task": "place object"}

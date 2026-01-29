@@ -1,0 +1,22 @@
+{
+  "codebase_version": "v3.0",
+  "robot_type": "test_robot",
+  "fps": 30,
+  "chunks_size": 1000,
+  "total_episodes": 2,
+  "total_frames": 10,
+  "features": {
+    "observation.state": {
+      "dtype": "float32",
+      "shape": [
+        6
+      ]
+    },
+    "action": {
+      "dtype": "float32",
+      "shape": [
+        6
+      ]
+    }
+  }
+}
